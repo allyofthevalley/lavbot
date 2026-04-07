@@ -13,7 +13,7 @@
 - **!listmoments**: Lists all moments stored in the bot.
 - **!del_moment**: Allows users to delete a specific moment manually.
 - **!distillation**: Automatically distills moments at a 50% retention rate.
-- **!prune**: Prunes unfavourited images from storage.
+- **!prune**: Prunes unfavourited images and removes duplicate notes from storage.
 
 ## Full Bot Commands
 

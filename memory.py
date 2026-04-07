@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 from datetime import datetime, timedelta
+from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Tuple
 
 import aiosqlite
@@ -14,6 +15,33 @@ DB_PATH = os.getenv("LAVENDER_MEMORY_DB", str(MEMORY_DB_PATH))
 
 def _today() -> str:
 	return datetime.now().strftime("%Y-%m-%d")
+
+
+def normalize_note_text(note_text: str) -> str:
+	return " ".join((note_text or "").strip().split())
+
+
+def _note_exact_key(note_text: str) -> str:
+	return normalize_note_text(note_text)
+
+
+def _note_similarity_key(note_text: str) -> str:
+	return normalize_note_text(note_text).casefold()
+
+
+def _notes_are_similar(left: str, right: str, threshold: float = 0.88) -> bool:
+	left_key = _note_similarity_key(left)
+	right_key = _note_similarity_key(right)
+	if not left_key or not right_key:
+		return False
+	if left_key == right_key:
+		return True
+	if left_key in right_key or right_key in left_key:
+		shorter = min(len(left_key), len(right_key))
+		longer = max(len(left_key), len(right_key))
+		if longer and (shorter / longer) >= threshold:
+			return True
+	return SequenceMatcher(None, left_key, right_key).ratio() >= threshold
 
 
 def normalize_tag_name(tag_name: str) -> str:
@@ -182,12 +210,33 @@ async def add_note(note_text: str, taken_date: str = None) -> int:
 		return note_number
 
 
-async def add_notes_batch(note_texts: List[str], taken_date: str = None) -> int:
+async def add_notes_batch(
+	note_texts: List[str],
+	taken_date: str = None,
+	ignore_exact_duplicates: bool = False,
+) -> int:
 	cleaned = [text.strip() for text in note_texts if isinstance(text, str) and text.strip()]
 	if not cleaned:
 		return 0
 
 	async with aiosqlite.connect(DB_PATH) as db:
+		if ignore_exact_duplicates:
+			cursor = await db.execute("SELECT note_text FROM notes")
+			rows = await cursor.fetchall()
+			existing_keys = {_note_exact_key(row[0]) for row in rows if row and row[0]}
+			filtered: List[str] = []
+			batch_keys = set()
+			for text in cleaned:
+				key = _note_exact_key(text)
+				if not key or key in existing_keys or key in batch_keys:
+					continue
+				filtered.append(text)
+				batch_keys.add(key)
+			cleaned = filtered
+
+		if not cleaned:
+			return 0
+
 		note_number = await _next_note_number(db)
 		for offset, text in enumerate(cleaned):
 			await db.execute(
@@ -313,6 +362,65 @@ async def delete_untagged_notes() -> int:
 				deleted += 1
 
 	return deleted
+
+
+async def prune_duplicate_notes(similarity_threshold: float = 0.88) -> Dict[str, int]:
+	async with aiosqlite.connect(DB_PATH) as db:
+		cursor = await db.execute(
+			"SELECT note_number, note_text, taken_date FROM notes ORDER BY note_number ASC"
+		)
+		rows = await cursor.fetchall()
+
+		kept_rows: List[Tuple[int, str, str]] = []
+		exact_removed = 0
+		similar_removed = 0
+
+		for note_number, note_text, taken_date in rows:
+			exact_key = _note_exact_key(note_text)
+			if not exact_key:
+				continue
+
+			if any(_note_exact_key(existing_text) == exact_key for _, existing_text, _ in kept_rows):
+				exact_removed += 1
+				continue
+
+			similar_index = next(
+				(
+					index
+					for index in range(len(kept_rows) - 1, -1, -1)
+					if _notes_are_similar(note_text, kept_rows[index][1], similarity_threshold)
+				),
+				None,
+			)
+			if similar_index is not None:
+				kept_rows.pop(similar_index)
+				kept_rows.append((note_number, note_text, taken_date))
+				similar_removed += 1
+				continue
+
+			kept_rows.append((note_number, note_text, taken_date))
+
+		total_removed = exact_removed + similar_removed
+		if total_removed == 0:
+			return {
+				"exact_removed": 0,
+				"similar_removed": 0,
+				"total_removed": 0,
+			}
+
+		await db.execute("DELETE FROM notes")
+		for new_number, (_, note_text, taken_date) in enumerate(kept_rows, start=1):
+			await db.execute(
+				"INSERT INTO notes (note_number, note_text, taken_date) VALUES (?, ?, ?)",
+				(new_number, note_text, taken_date),
+			)
+		await db.commit()
+
+		return {
+			"exact_removed": exact_removed,
+			"similar_removed": similar_removed,
+			"total_removed": total_removed,
+		}
 
 
 async def _next_persona_memory_number(db: aiosqlite.Connection, persona: str) -> int:

@@ -42,6 +42,7 @@ from memory import (
 	list_tags_with_counts,
 	load_persona_memory_texts,
 	normalize_tag_name,
+	prune_duplicate_notes,
 	recent_moments,
 	scan_messages_for_tags,
 	replace_persona_memory_by_text,
@@ -820,13 +821,21 @@ async def scan_tags_command(ctx: commands.Context, limit: int):
 
 	recent_messages.reverse()
 	matches, tag_counts = scan_messages_for_tags(recent_messages, tags)
-	added = await add_notes_batch(matches)
+	added = await add_notes_batch(matches, ignore_exact_duplicates=True)
 	if added == 0:
-		await ctx.send(f"Scanned {scanned} recent messages and found no matches for your existing tags.")
+		if matches:
+			summary = ", ".join(f"{tag} ({count})" for tag, count in tag_counts.items())
+			await ctx.send(
+				f"Scanned {scanned} recent messages and found tagged matches ({summary}), but they were already saved."
+			)
+		else:
+			await ctx.send(f"Scanned {scanned} recent messages and found no matches for your existing tags.")
 		return
 
 	summary = ", ".join(f"{tag} ({count})" for tag, count in tag_counts.items())
-	await ctx.send(f"Scanned {scanned} recent messages and saved {added} tagged note(s): {summary}.")
+	duplicate_skips = len(matches) - added
+	duplicate_text = f" Skipped {duplicate_skips} exact duplicate(s)." if duplicate_skips else ""
+	await ctx.send(f"Scanned {scanned} recent messages and saved {added} tagged note(s): {summary}.{duplicate_text}")
 
 
 @bot.command(name="listnotes")
@@ -1075,9 +1084,12 @@ async def prune_command(ctx: commands.Context):
 	if not is_allowed_user(ctx.author.id):
 		return
 	deleted_images = await prune_old_unfavorited_images(delete_all_unfavorited=True)
+	deduped_notes = await prune_duplicate_notes()
 	await ctx.send(
 		"baa… pruning complete!\n"
-		f"- Deleted unfavourited pictures: {deleted_images}"
+		f"- Deleted unfavourited pictures: {deleted_images}\n"
+		f"- Removed exact duplicate notes: {deduped_notes['exact_removed']}\n"
+		f"- Removed near-duplicate notes: {deduped_notes['similar_removed']}"
 	)
 
 
@@ -1188,7 +1200,7 @@ async def guji_command(ctx: commands.Context):
 		"- `!tag create \"name\"` — create a note tag\n"
 		"- `!tag delete \"name\"` — delete a note tag\n"
 		"- `!listtag \"name\"` — list notes under a tag\n"
-		"- `!scan_tags <count>` — scan recent messages for any existing tag\n"
+		"- `!scan_tags <count>` — scan recent messages for any existing tag and skip exact duplicates\n"
 		"- `!list_tags` — list tags and note counts\n\n"
 		"🧠 **Short-Term Memory**\n"
 		"- `!analyze_history <limit>` — analyze recent messages and save the report as a moment\n"
@@ -1201,7 +1213,7 @@ async def guji_command(ctx: commands.Context):
 		"- `!favnum <number>` — favourite an image\n"
 		"- `!unfavnum <number>` — unfavourite an image\n"
 		"- `!listfav` — list favourite images\n\n"
-		"- `!prune` — delete all unfavourited pictures immediately\n\n"
+		"- `!prune` — delete all unfavourited pictures and prune duplicate notes\n\n"
 		"🌐 **Internet Search**\n"
 		"- `!weather [location]` — get weather\n"
 		"- `!news [query]` — search the news\n\n"
