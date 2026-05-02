@@ -14,6 +14,8 @@ lavuserdata/
 
 # Virtual environment
 .venv/
+.venv-1/
+.venv-1-broken-*/
 
 # Python cache
 __pycache__/

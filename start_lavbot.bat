@@ -2,6 +2,10 @@
 setlocal
 cd /d "%~dp0"
 
+rem Prevent inherited global Python env vars from breaking venv startup.
+set "PYTHONHOME="
+set "PYTHONPATH="
+
 echo Starting Lavender TUI...
 if exist ".venv-1\Scripts\python.exe" (
 	".venv-1\Scripts\python.exe" lavender_tui.py

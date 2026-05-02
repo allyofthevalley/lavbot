@@ -3,6 +3,10 @@ setlocal
 title LavenderBot
 cd /d "%~dp0"
 
+rem Prevent inherited global Python env vars from breaking venv startup.
+set "PYTHONHOME="
+set "PYTHONPATH="
+
 if exist ".venv-1\Scripts\python.exe" (
 	".venv-1\Scripts\python.exe" bot.py
 ) else (
