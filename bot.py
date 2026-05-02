@@ -12,9 +12,9 @@ from dotenv import load_dotenv
 from config import (
 	get_discord_token,
 	get_local_model,
+	get_local_api_base_url,
 	get_local_provider_kind,
 	get_news_key,
-	get_ollama_base_url,
 	is_allowed_user,
 	who_is,
 )
@@ -51,7 +51,7 @@ from memory import (
 )
 from personality import get_custom_personality_prompt, personality_for
 from security import safe_output, sanitize_input, run_pip_audit, run_bandit, run_safety_check, run_full_security_audit
-from tools.vision import ask_ollama_vision
+from tools.vision import ask_vision
 from user_db import get_persona_for_user, get_setting, set_setting
 
 ensure_userdata_dirs()
@@ -355,7 +355,7 @@ async def apply_persona_memory_actions(user_id: int, reply: str):
 
 
 def _extract_local_text_response(data: dict) -> str:
-	"""Extract assistant text from Ollama or OpenAI-compatible responses."""
+	"""Extract assistant text from local AI provider responses."""
 	if not isinstance(data, dict):
 		return ""
 
@@ -387,8 +387,8 @@ def _extract_local_text_response(data: dict) -> str:
 	return ""
 
 
-def _ollama_sync(prompt: str) -> str:
-	base_url = get_ollama_base_url()
+def _local_ai_sync(prompt: str) -> str:
+	base_url = get_local_api_base_url()
 	provider_kind = get_local_provider_kind()
 	chat_model = get_local_model("chat")
 
@@ -433,8 +433,8 @@ def _ollama_sync(prompt: str) -> str:
 		return "baa… I can't connect to my local AI provider right now. Please check the configured provider and base URL."
 
 
-async def ollama_chat(prompt: str) -> str:
-	return await asyncio.to_thread(_ollama_sync, prompt)
+async def local_ai_chat(prompt: str) -> str:
+	return await asyncio.to_thread(_local_ai_sync, prompt)
 
 
 def search_weather(location: str = DEFAULT_LOCATION) -> str:
@@ -665,7 +665,7 @@ async def trigger_distillation() -> None:
 			"patterns, topics, and emotional themes."
 		)
 
-	summary = safe_output(await ollama_chat(prompt))
+	summary = safe_output(await local_ai_chat(prompt))
 	summary = strip_memory_directives(summary).strip() or previous or ""
 	if summary:
 		await set_distillation(summary)
@@ -686,7 +686,7 @@ async def process_chat_message(user_message: str, user_id: int) -> str:
 			memory_status=memory_status,
 			allow_model_memory_edits=not handled_memory_request,
 		)
-		reply = safe_output(await ollama_chat(prompt))
+		reply = safe_output(await local_ai_chat(prompt))
 		if not handled_memory_request:
 			await apply_persona_memory_actions(user_id, reply)
 		clean_reply = strip_memory_directives(reply) or "baa… I had a thought, but I lost the words."
@@ -734,7 +734,7 @@ async def on_message(message: discord.Message):
 			temp_path = await save_incoming_image(attachment)
 			caption_text = message.content.replace(f"<@{bot_user.id}>", "").strip() if bot_user else message.content.strip()
 			async with message.channel.typing():
-				vision_result = ask_ollama_vision(temp_path, user_message=caption_text)
+				vision_result = ask_vision(temp_path, user_message=caption_text)
 			description = vision_result.get("detailed_description") or vision_result.get("description") or f"Saved that picture as {os.path.basename(temp_path)}."
 			description += f"\n\nSaved as **{os.path.basename(temp_path)}**."
 			await message.channel.send(description)
@@ -980,7 +980,7 @@ async def analyze_history_command(ctx: commands.Context, limit: int = 50):
 	)
 
 	async with ctx.typing():
-		analysis = safe_output(await ollama_chat(analysis_prompt))
+		analysis = safe_output(await local_ai_chat(analysis_prompt))
 
 	search_match = re.search(r"\[SEARCH:\s*(.+?)\]", analysis, re.IGNORECASE)
 	display_analysis = re.sub(r"\[SEARCH:\s*.+?\]\s*", "", analysis).strip()
@@ -1027,7 +1027,7 @@ async def analyze_history_command(ctx: commands.Context, limit: int = 50):
 		"This is general wellness information only, not medical advice or a diagnosis. Be concise and helpful."
 	)
 	async with ctx.typing():
-		cause_summary = safe_output(await ollama_chat(summarize_prompt))
+		cause_summary = safe_output(await local_ai_chat(summarize_prompt))
 	await ctx.send(f"**💡 Potential causes for:** *{query}*\n\n{cause_summary}")
 
 

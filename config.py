@@ -45,6 +45,7 @@ OPENAI_COMPATIBLE_PROVIDER_ALIASES = {
     "oobabooga": "openai",
     "text-generation-webui": "openai",
     "textgen": "openai",
+    "unsloth": "openai",
 }
 
 

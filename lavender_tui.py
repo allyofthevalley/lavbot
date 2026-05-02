@@ -134,13 +134,13 @@ class LavenderTUI(App):
             chat.write("/news show — display current News API key")
             chat.write("")
             chat.write("Local AI Provider:")
-            chat.write(f"/ollama show — show current provider and base URL (default: {LOCAL_API_BASE_URL_DEFAULT})")
-            chat.write("/ollama set provider <auto|ollama|openai|lmstudio> — choose the local API format")
-            chat.write("/ollama set base_url <url> — set the full local API URL (e.g. http://localhost:1234/v1)")
-            chat.write("/ollama set host <value> — quickly update just the hostname")
-            chat.write("/ollama set port <value> — quickly update just the port")
-            chat.write("/provider ... — alias for /ollama ...")
-            chat.write("/ollama reset — restore local provider defaults")
+            chat.write(f"/provider show — show current provider and base URL (default: {LOCAL_API_BASE_URL_DEFAULT})")
+            chat.write("/provider set provider <auto|ollama|openai|lmstudio|unsloth> — choose the local API format")
+            chat.write("/provider set base_url <url> — set the full local API URL (e.g. http://localhost:8000/v1)")
+            chat.write("/provider set host <value> — quickly update just the hostname")
+            chat.write("/provider set port <value> — quickly update just the port")
+            chat.write("/ollama ... — alias for /provider ...")
+            chat.write("/provider reset — restore local provider defaults")
             chat.write("")
             chat.write("System:")
             chat.write("/models — show the active shared AI model")
@@ -412,7 +412,7 @@ class LavenderTUI(App):
                 chat.write(f"Local provider: {provider}")
                 chat.write(f"API base URL: {base_url}")
                 chat.write(f"Legacy host/port: {host}:{port}")
-                chat.write("Examples: Ollama = http://localhost:11434 | LM Studio = http://localhost:1234/v1")
+                chat.write("Examples: Ollama = http://localhost:11434 | LM Studio = http://localhost:1234/v1 | Unsloth/vLLM = http://localhost:8000/v1")
                 return
 
             if len(parts) >= 4 and parts[1].lower() == "set":
@@ -436,14 +436,14 @@ class LavenderTUI(App):
                     provider_value = value.strip().lower().replace("_", "-")
                     if provider_value == "lm-studio":
                         provider_value = "lmstudio"
-                    allowed = {"auto", "ollama", "openai", "openai-compatible", "lmstudio"}
+                    allowed = {"auto", "ollama", "openai", "openai-compatible", "lmstudio", "unsloth"}
                     if provider_value not in allowed:
-                        chat.write("Provider must be one of: auto, ollama, openai, openai-compatible, lmstudio.")
+                        chat.write("Provider must be one of: auto, ollama, openai, openai-compatible, lmstudio, unsloth.")
                     else:
                         set_setting("LOCAL_PROVIDER", provider_value)
                         chat.write(f"Local provider type set to {provider_value}.")
                 else:
-                    chat.write("Use: /ollama set provider <auto|ollama|openai|lmstudio> | /ollama set base_url <url> | /ollama set host <value> | /ollama set port <value>")
+                    chat.write("Use: /provider set provider <auto|ollama|openai|lmstudio|unsloth> | /provider set base_url <url> | /provider set host <value> | /provider set port <value>")
                 return
 
             if len(parts) >= 2 and parts[1].lower() == "reset":
@@ -454,8 +454,8 @@ class LavenderTUI(App):
                 chat.write(f"Local provider settings reset to defaults ({LOCAL_API_BASE_URL_DEFAULT}, provider=auto).")
                 return
 
-            chat.write("Usage: /ollama show | /ollama set provider <auto|ollama|openai|lmstudio> | /ollama set base_url <url> | /ollama set host <v> | /ollama set port <v> | /ollama reset")
-            chat.write("Tip: `/provider ...` is an alias for `/ollama ...`.")
+            chat.write("Usage: /provider show | /provider set provider <auto|ollama|openai|lmstudio|unsloth> | /provider set base_url <url> | /provider set host <v> | /provider set port <v> | /provider reset")
+            chat.write("Tip: `/ollama ...` is an alias for `/provider ...`.")
             return
 
         if cmd == "/security":
@@ -502,7 +502,7 @@ class LavenderTUI(App):
             chat.write(f"  • All notes, tags, persona memories, and moments ({MEMORY_DIR})")
             chat.write(f"  • All saved pictures and favorites ({IMAGES_DIR}, {FAVORITES_PATH})")
             chat.write(f"  • All users, API keys & Discord token ({USERDATA_ROOT / 'user.db'})")
-            chat.write("  • All Ollama host/port settings")
+            chat.write("  • All local provider host/port settings")
             chat.write("")
             chat.write("Type [bold]Y[/bold] to confirm, or anything else to cancel:")
             self._pending_reset = True
@@ -605,11 +605,7 @@ class LavenderTUI(App):
 
     async def show_quickstart(self, chat: RichLog):
         """Show a text-based quickstart guide for a fresh machine."""
-        try:
-            ollama_result = subprocess.run(["ollama", "--version"], capture_output=True, text=True, timeout=5)
-            ollama_status = ollama_result.stdout.strip() or ollama_result.stderr.strip() or "ollama detected"
-        except Exception:
-            ollama_status = "ollama not detected"
+        provider_cli_status = "n/a (provider-neutral mode)"
 
         provider = get_setting("LOCAL_PROVIDER") or get_local_provider_name()
         base_url = get_local_api_base_url()
@@ -619,19 +615,20 @@ class LavenderTUI(App):
         chat.write(f"Current Python: {sys.executable}")
         chat.write(f"Configured local provider: {provider}")
         chat.write(f"Configured API base URL: {base_url}")
-        chat.write(f"Ollama CLI status (optional): {ollama_status}")
         chat.write("")
         chat.write("1. Install Python")
         chat.write("   Download Python 3.11+ from https://www.python.org/downloads/windows/")
         chat.write("   Make sure 'Add python.exe to PATH' is enabled during install.")
         chat.write("")
         chat.write("2. Start a local AI provider")
-        chat.write("   Option A: Ollama → https://ollama.com/download/windows")
-        chat.write("   Option B: LM Studio local server → https://lmstudio.ai/")
-        chat.write("   Most non-Ollama local servers expose an OpenAI-compatible /v1 endpoint.")
+        chat.write("   Option A: Unsloth → https://github.com/unslothai/unsloth (OpenAI-compatible server)")
+        chat.write("   Option B: Ollama → https://ollama.com/download/windows")
+        chat.write("   Option C: LM Studio local server → https://lmstudio.ai/")
+        chat.write("   Most local AI servers expose an OpenAI-compatible /v1 endpoint.")
         chat.write("")
         chat.write("3. Load a model")
-        chat.write("   Ollama example: ollama pull qwen3.5")
+        chat.write("   Unsloth/vLLM example: start server with your fine-tuned model on http://localhost:8000/v1")
+        chat.write("   Ollama example: ollama pull <model-name>")
         chat.write("   LM Studio example: download a model and start the local server in-app.")
         chat.write("")
         chat.write("4. Install Lavbot dependencies")
@@ -640,8 +637,8 @@ class LavenderTUI(App):
         chat.write("5. Configure Lavbot in the TUI")
         chat.write("   /token set <discord_bot_token>")
         chat.write("   /user add <discord_user_id> <name> <persona>")
-        chat.write("   /ollama set provider lmstudio")
-        chat.write("   /ollama set base_url http://localhost:1234/v1")
+        chat.write("   /provider set provider unsloth")
+        chat.write("   /provider set base_url http://localhost:8000/v1")
         chat.write("   /models set <your_model_name>")
         chat.write("")
         chat.write("6. Verify storage and note systems")

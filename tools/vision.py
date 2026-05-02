@@ -4,7 +4,7 @@ import os
 
 import requests
 
-from config import get_local_model, get_local_provider_kind, get_ollama_base_url
+from config import get_local_model, get_local_provider_kind, get_local_api_base_url
 
 
 def _get_vision_model() -> str:
@@ -97,7 +97,7 @@ def _extract_local_text_response(data: dict) -> str:
 
 
 def _post_vision_request(prompt: str, encoded_image: str) -> str:
-    base_url = get_ollama_base_url()
+    base_url = get_local_api_base_url()
     provider_kind = get_local_provider_kind()
     vision_model = _get_vision_model()
 
@@ -138,7 +138,7 @@ def _post_vision_request(prompt: str, encoded_image: str) -> str:
     return _extract_local_text_response(response.json())
 
 
-def ask_ollama_vision(image_path: str, user_message: str | None = None) -> dict:
+def ask_vision(image_path: str, user_message: str | None = None) -> dict:
     """
     Sends an image and optional accompanying message text to a local multimodal model.
 
